@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Voleybol Skor</title>
+<style>
+:root{color-scheme:dark;--bg:#0f1115;--a:#1e5cff;--b:#ff6a1e;--ink:#fff;--bar:#000c}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
+body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#app{display:flex;height:100%;position:relative}
+.half{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none;position:relative}
+.half.a{background:var(--a)}.half.b{background:var(--b)}
+.name{width:80%;text-align:center;font-size:22px;font-weight:700;background:#0003;color:#fff;border:0;border-radius:10px;padding:8px;user-select:text;position:absolute;top:14px}
+.score{font-size:min(38vw,42vh);font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.sets{position:absolute;bottom:90px;font-size:20px;opacity:.9}
+.hint{position:absolute;bottom:60px;font-size:12px;opacity:.6}
+#bar{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;justify-content:center;pointer-events:none}
+#bar button{pointer-events:auto;background:var(--bar);color:#fff;border:1px solid #fff3;border-radius:999px;padding:12px 16px;font-size:15px;font-weight:600}
+#bar button:active{background:#fff3}
+.pop{animation:p .18s}@keyframes p{50%{transform:scale(1.12)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="half a" id="hL"><input class="name" id="nL" maxlength="16"><div class="score" id="sL">0</div><div class="sets" id="setL"></div><div class="hint">dokun +1 · yukarı kaydır +1 · aşağı −1</div></div>
+  <div class="half b" id="hR"><input class="name" id="nR" maxlength="16"><div class="score" id="sR">0</div><div class="sets" id="setR"></div><div class="hint">dokun +1 · yukarı kaydır +1 · aşağı −1</div></div>
+  <div id="bar">
+    <button id="undo">↶ Geri al</button>
+    <button id="swap">⇄ Taraf</button>
+    <button id="endSet">Seti bitir</button>
+    <button id="reset">Sıfırla</button>
+  </div>
+</div>
+<script>
+const KEY='voleybol-skor-v1';
+const fresh=()=>({t:[{n:'Takım A',s:0,w:0},{n:'Takım B',s:0,w:0}],swap:false});
+let st=fresh(),hist=[];
+try{const r=localStorage.getItem(KEY);if(r){const o=JSON.parse(r);st=o.st||st;hist=o.hist||[]}}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({st,hist:hist.slice(-200)}))}catch(e){}};
+const snap=()=>{hist.push(JSON.stringify(st))};
+const $=id=>document.getElementById(id);
+const idx=side=>(side==='L')!==st.swap?0:1; // which team is on the side
+function render(pop){
+  for(const side of ['L','R']){
+    const t=st.t[idx(side)];
+    $('s'+side).textContent=t.s;
+    $('set'+side).textContent='Set: '+t.w;
+    if($('n'+side)!==document.activeElement)$('n'+side).value=t.n;
+    // colors follow team so they stay recognizable after swap
+    $('h'+side).className='half '+(idx(side)===0?'a':'b');
+  }
+  if(pop){const e=$('s'+pop);e.classList.remove('pop');void e.offsetWidth;e.classList.add('pop')}
+  save();
+}
+function change(side,d){
+  const t=st.t[idx(side)];
+  if(d<0&&t.s===0)return;
+  snap();t.s+=d;render(side);
+  if(navigator.vibrate)navigator.vibrate(15);
+}
+for(const side of ['L','R']){
+  const el=$('h'+side);let sx,sy,on=false;
+  el.addEventListener('pointerdown',e=>{if(e.target.tagName==='INPUT')return;on=true;sx=e.clientX;sy=e.clientY;el.setPointerCapture(e.pointerId)});
+  el.addEventListener('pointerup',e=>{
+    if(!on)return;on=false;
+    const dx=e.clientX-sx,dy=e.clientY-sy;
+    if(Math.abs(dy)>40&&Math.abs(dy)>Math.abs(dx))change(side,dy<0?1:-1);
+    else if(Math.abs(dx)<15&&Math.abs(dy)<15)change(side,1);
+  });
+  el.addEventListener('pointercancel',()=>on=false);
+  $('n'+side).addEventListener('input',e=>{st.t[idx(side)].n=e.target.value;save()});
+}
+$('undo').onclick=()=>{if(!hist.length)return;st=JSON.parse(hist.pop());render()};
+$('swap').onclick=()=>{snap();st.swap=!st.swap;render()};
+function ask(btn,fn){
+  if(btn.dataset.armed){clearTimeout(btn._t);btn.textContent=btn.dataset.label;delete btn.dataset.armed;fn();return}
+  btn.dataset.label=btn.textContent;btn.dataset.armed=1;btn.textContent='Emin misin?';
+  btn._t=setTimeout(()=>{btn.textContent=btn.dataset.label;delete btn.dataset.armed},3000);
+}
+$('endSet').onclick=function(){
+  const [a,b]=st.t,btn=this;
+  if(a.s===b.s){const l=btn.dataset.label||btn.textContent;btn.textContent='Skor eşit!';setTimeout(()=>btn.textContent=l,1500);return}
+  ask(btn,()=>{snap();(a.s>b.s?a:b).w++;a.s=0;b.s=0;st.swap=!st.swap;render()});
+};
+$('reset').onclick=function(){
+  ask(this,()=>{snap();st.t.forEach(t=>{t.s=0;t.w=0});render()});
+};
+render();
+try{navigator.wakeLock&&navigator.wakeLock.request('screen').catch(()=>{})}catch(e){}
+</script>
+</body>
+</html>
